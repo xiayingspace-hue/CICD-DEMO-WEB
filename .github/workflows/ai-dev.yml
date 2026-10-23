@@ -1,0 +1,146 @@
+# 收到 CICD-DEMO-CONTEXT 合并事件后，由 Claude Code 在本仓实现该 PR 涉及的需求，并开草稿 PR。
+#
+# 需要的 secret（本仓库 Settings → Secrets and variables → Actions）：
+#   ANTHROPIC_API_KEY  调用 Claude 的 API Key
+#   CONTEXT_TOKEN      细粒度 PAT，对 CICD-DEMO-CONTEXT 授予 Contents: Read 与 Issues: Read and write
+# 还需要在 Settings → Actions → General → Workflow permissions 勾选
+#   「Allow GitHub Actions to create and approve pull requests」
+#
+# 范围限制：只实现事件里 changed_reqs 涉及、且在该合并 PR 的 diff 中出现的变更；其余一律不动。
+name: ai-dev
+
+on:
+  repository_dispatch:
+    types: [context-merged]
+  workflow_dispatch:
+    inputs:
+      merge_sha:
+        description: 'CONTEXT 仓库的合并提交'
+        required: true
+      reqs:
+        description: 'REQ 编号，逗号分隔，例如 REQ-001'
+        required: true
+      pr_url:
+        description: 'CONTEXT 合并 PR 的链接（可选）'
+        required: false
+
+concurrency:
+  group: ai-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CONTEXT_REPO: xiayingspace-hue/CICD-DEMO-CONTEXT
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: 解析事件
+        id: ev
+        env:
+          P_SHA: ${{ github.event.client_payload.merge_sha }}
+          P_REQS: ${{ join(github.event.client_payload.changed_reqs, ',') }}
+          P_URL: ${{ github.event.client_payload.pr_url }}
+          I_SHA: ${{ inputs.merge_sha }}
+          I_REQS: ${{ inputs.reqs }}
+          I_URL: ${{ inputs.pr_url }}
+        run: |
+          sha="${P_SHA:-$I_SHA}"; reqs="${P_REQS:-$I_REQS}"; url="${P_URL:-$I_URL}"
+          [[ "$sha" =~ ^[0-9a-f]{7,40}$ ]] || { echo "::error::merge_sha 不合法：$sha"; exit 1; }
+          [[ "$reqs" =~ ^REQ-[0-9]{3}(,REQ-[0-9]{3})*$ ]] || { echo "::error::reqs 不合法：$reqs"; exit 1; }
+          {
+            echo "sha=$sha"; echo "reqs=$reqs"; echo "url=$url"
+            echo "branch=feat/$(echo "$reqs" | tr 'A-Z,' 'a-z-')-auto-${sha:0:7}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检出产品文档（固定到合并提交，只读）
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CONTEXT_REPO }}
+          ref: ${{ steps.ev.outputs.sha }}
+          token: ${{ secrets.CONTEXT_TOKEN }}
+          path: context
+          fetch-depth: 0
+
+      - name: 计算本次 PR 的变更范围
+        run: |
+          echo context >> .git/info/exclude
+          cd context
+          parent=$(git rev-parse "${{ steps.ev.outputs.sha }}^1" 2>/dev/null || git hash-object -t tree /dev/null)
+          git diff --stat "$parent" "${{ steps.ev.outputs.sha }}" -- requirements outputs/api outputs/qa prototypes > "$RUNNER_TEMP/context.stat"
+          git diff "$parent" "${{ steps.ev.outputs.sha }}" -- requirements outputs/api outputs/qa prototypes > "$RUNNER_TEMP/context.diff"
+          cat "$RUNNER_TEMP/context.stat"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装 Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: 生成提示词
+        env:
+          CONTEXT_DIR: context
+          REQS: ${{ steps.ev.outputs.reqs }}
+          MERGE_SHA: ${{ steps.ev.outputs.sha }}
+          PR_URL: ${{ steps.ev.outputs.url }}
+          DIFF_FILE: ${{ runner.temp }}/context.diff
+          STAT_FILE: ${{ runner.temp }}/context.stat
+          PR_BODY_FILE: ${{ runner.temp }}/pr-body.md
+        run: |
+          envsubst '${CONTEXT_DIR} ${REQS} ${MERGE_SHA} ${PR_URL} ${DIFF_FILE} ${STAT_FILE} ${PR_BODY_FILE}' \
+            < .github/ai/implement-prompt.md > "$RUNNER_TEMP/prompt.md"
+
+      - name: 运行 Claude Code 实现
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # 供 gh 在 CONTEXT 仓库开 Issue；本仓的分支与 PR 由下一步用 GITHUB_TOKEN 创建
+          GH_TOKEN: ${{ secrets.CONTEXT_TOKEN }}
+        run: |
+          claude -p "$(cat "$RUNNER_TEMP/prompt.md")" \
+            --max-turns 80 \
+            --permission-mode acceptEdits \
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm:*),Bash(npx msw:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(ls:*),Bash(cat:*),Bash(gh issue create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue comment:*)"
+
+      - name: 提交并开草稿 PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.ev.outputs.branch }}
+          REQS: ${{ steps.ev.outputs.reqs }}
+          CTX_PR: ${{ steps.ev.outputs.url }}
+          SHA: ${{ steps.ev.outputs.sha }}
+        run: |
+          git config user.name "ai-dev"
+          git config user.email "ai-dev@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::没有产生任何改动，不开 PR。"
+            exit 0
+          fi
+          git commit -q -m "feat($REQS): 按产品文档自动实现
+
+          来源：$CTX_PR（合并提交 $SHA）
+
+          Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+          git push -u origin "$BRANCH"
+          body="$RUNNER_TEMP/pr-body.md"
+          if [ ! -s "$body" ]; then
+            printf '自动实现 %s。来源：%s\n\n（AI 未生成说明，请对照需求文档评审。）\n' "$REQS" "$CTX_PR" > "$body"
+          fi
+          printf '\n---\n来源 PR：%s\n合并提交：%s\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' "$CTX_PR" "$SHA" >> "$body"
+          gh pr create --draft --base main --head "$BRANCH" \
+            --title "feat($REQS): 按产品文档自动实现" --body-file "$body"
