@@ -1,6 +1,6 @@
-// 角色 → 首页。路径按 CONTEXT#4 的建议默认，待 PM 确认
+// 角色 → 首页。路径以 CONTEXT 的 requirements/shared/ROLES.md 为准（CONTEXT#4、#6 PM 已确认）
 export const HOME_BY_ROLE = {
-  OWNER: { name: 'home-owner', path: '/owner', title: '屋主首页' },
-  CSO: { name: 'home-cso', path: '/cso', title: 'CSO 首页' },
-  SUBCONTRACTOR: { name: 'home-sub', path: '/subcontractor', title: '分包首页' },
+  OWNER: { name: 'home-owner', path: '/owner/home', title: '屋主首页' },
+  CSO: { name: 'home-cso', path: '/cso/home', title: 'CSO 首页' },
+  SUBCONTRACTOR: { name: 'home-sub', path: '/sub/home', title: '分包首页' },
 }
