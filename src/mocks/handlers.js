@@ -89,7 +89,7 @@ export const handlers = [
     const parsed = parseToken(token)
     if (!parsed || !Object.hasOwn(ACCOUNTS, parsed.account)) return unauthenticated()
     if (Date.now() - parsed.issuedAt > EXPIRES_IN * 1000) return unauthenticated()
-    // 每次都查账号当前状态，停用后令牌立即失效（AC-016）
+    // 每次都查账号当前状态，停用后令牌立即失效（AC-016）；重新启用后恢复有效（需求第 11 章，CONTEXT#3）
     if (!isEnabled(parsed.account)) return unauthenticated()
 
     const { role, displayName } = ACCOUNTS[parsed.account]

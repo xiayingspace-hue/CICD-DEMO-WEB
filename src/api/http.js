@@ -3,7 +3,7 @@
 
 const BASE = import.meta.env.VITE_API_BASE
 
-// 需求第 9 章：登录接口响应超过 10 秒视为网络异常。auth/me 暂按同值，见 CONTEXT#5
+// 需求第 9 章：登录接口响应超过 10 秒视为网络异常；auth/me 超过 10 秒视为超时，按未登录处理（AC-013）
 export const TIMEOUT_MS = 10000
 
 export const TOKEN_KEY = 'token'
