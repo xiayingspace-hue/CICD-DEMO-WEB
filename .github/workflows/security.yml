@@ -1,0 +1,63 @@
+# PR 阶段安全扫描（合并前）：A 密钥泄露、B 依赖漏洞、C 静态代码扫描（CodeQL）。
+# 在 Settings → Branches 的 main 保护规则里，把下面三个 job 名设为必过检查：
+#   secrets-scan、dependency-audit、codeql
+#
+# 门禁口径：密钥命中即失败；依赖只对生产依赖的高危及以上失败（开发依赖不进产物）；
+# CodeQL 的告警在 Security → Code scanning 查看，高危及以上由仓库的 code scanning 保护规则拦截。
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 1' # 每周一 02:00 UTC，捕获新披露的依赖漏洞与新规则
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # A. 密钥泄露：扫描完整提交历史
+  secrets-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # B. 依赖漏洞：只看生产依赖，高危及以上失败
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm audit --omit=dev --audit-level=high
+
+  # C. 静态代码扫描
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript

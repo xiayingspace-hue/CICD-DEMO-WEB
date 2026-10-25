@@ -1,0 +1,13 @@
+# 依赖更新与漏洞告警。npm 的安全更新即时提 PR，常规版本更新每周一次；
+# 依赖变更仍需在 PR 描述里说明理由（CLAUDE.md），由人评审后合并。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
