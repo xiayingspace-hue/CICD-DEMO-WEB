@@ -11,6 +11,10 @@ export const ACCOUNTS = {
   'owner-lastday': { role: 'OWNER', displayName: 'DLP 截止日当天屋主', enabled: true },
   'owner-nounit': { role: 'OWNER', displayName: '未绑定单元屋主', enabled: true },
   'owner-revoke': { role: 'OWNER', displayName: '待停用屋主', enabled: true },
+  // REQ-003 列表联调账号（QA-defect-003-user「测试账号与数据约定」）
+  'owner-list': { role: 'OWNER', displayName: '列表屋主（25 条）', enabled: true },
+  'owner-bulk': { role: 'OWNER', displayName: '列表屋主（45 条）', enabled: true },
+  'owner-empty': { role: 'OWNER', displayName: '列表屋主（无缺陷）', enabled: true },
 }
 
 // 仅 mock 使用的场景账号：任意密码，用于触发异常分支
