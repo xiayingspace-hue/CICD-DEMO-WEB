@@ -80,7 +80,7 @@ jobs:
           git diff "$parent" "${{ steps.ev.outputs.sha }}" -- requirements outputs/api outputs/qa prototypes > "$RUNNER_TEMP/context.diff"
           cat "$RUNNER_TEMP/context.stat"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
