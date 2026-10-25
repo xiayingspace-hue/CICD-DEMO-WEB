@@ -88,10 +88,10 @@ onBeforeUnmount(() => {
         <button type="button" class="remove" data-testid="thumb-remove" aria-label="删除图片" @click="remove(img)">×</button>
       </div>
 
+      <!-- 满 5 张后入口保持可点（仅置灰样式），选择文件时提示「最多上传 5 张图片」（AC-004，CONTEXT#9） -->
       <label
-        v-if="images.length < LIMITS.imagesMax"
         class="thumb add"
-        :class="{ disabled }"
+        :class="{ disabled, full: images.length >= LIMITS.imagesMax }"
         data-testid="btn-add-image"
       >
         + 添加图片
@@ -194,6 +194,10 @@ onBeforeUnmount(() => {
 .add:focus-within {
   border-color: var(--brand-accent);
   color: var(--brand-accent);
+}
+
+.add.full {
+  opacity: 0.55;
 }
 
 .add.disabled {
