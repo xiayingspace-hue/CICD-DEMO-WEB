@@ -6,7 +6,10 @@ export const ACCOUNTS = {
   cso01: { role: 'CSO', displayName: '李静', enabled: true },
   sub01: { role: 'SUBCONTRACTOR', displayName: '华建装修', enabled: true },
   off01: { role: 'OWNER', displayName: '停用账号', enabled: false },
+  owner02: { role: 'OWNER', displayName: '王大伟', enabled: true },
   'owner-expired': { role: 'OWNER', displayName: 'DLP 到期屋主', enabled: true, dlpExpired: true },
+  'owner-lastday': { role: 'OWNER', displayName: 'DLP 截止日当天屋主', enabled: true },
+  'owner-nounit': { role: 'OWNER', displayName: '未绑定单元屋主', enabled: true },
   'owner-revoke': { role: 'OWNER', displayName: '待停用屋主', enabled: true },
 }
 
