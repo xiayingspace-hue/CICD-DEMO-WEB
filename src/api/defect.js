@@ -1,4 +1,4 @@
-// 屋主缺陷接口，见 CONTEXT outputs/api/API-defect-002-user.md
+// 屋主缺陷接口，见 CONTEXT outputs/api/API-defect-002-user.md、API-defect-003-user.md
 import { request } from './http'
 
 export const ERROR_CODES = {
@@ -106,4 +106,22 @@ export function updateDefect(defectId, payload) {
 
 export function withdrawDefect(defectId) {
   return request(`/defects/${encodeURIComponent(defectId)}/withdraw`, { method: 'POST', auth: true })
+}
+
+// REQ-003 状态筛选项（需求第 5 章）；value 为接口 statusFilter 枚举，空串表示全部
+export const STATUS_FILTERS = [
+  { value: '', label: '全部' },
+  { value: 'PENDING_DISPATCH', label: '待派单' },
+  { value: 'DISPATCHED', label: '已派单' },
+  { value: 'IN_PROGRESS', label: '处理中' },
+  { value: 'WITHDRAWN', label: '已撤回' },
+]
+
+export const LIST_PAGE_SIZE = 20
+
+/** GET /defects → { items, pageNo, pageSize, total }；statusFilter 为空串时不传（全部） */
+export function fetchDefects({ statusFilter = '', pageNo = 1 } = {}) {
+  const params = new URLSearchParams({ pageNo: String(pageNo), pageSize: String(LIST_PAGE_SIZE) })
+  if (statusFilter) params.set('statusFilter', statusFilter)
+  return request(`/defects?${params}`, { auth: true })
 }

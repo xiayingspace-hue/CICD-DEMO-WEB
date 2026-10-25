@@ -20,10 +20,35 @@ const units = {
   'owner-expired': { unitName: '碧湖苑 3 栋 02-01', dlpEndDate: '2026-09-30' },
   'owner-lastday': { unitName: '碧湖苑 5 栋 05-05', dlpEndDate: sgToday() },
   'owner-revoke': { unitName: '碧湖苑 6 栋 06-06', dlpEndDate: '2027-03-31' },
+  'owner-list': { unitName: '碧湖苑 1 栋 01-01', dlpEndDate: '2027-03-31' },
+  'owner-bulk': { unitName: '碧湖苑 2 栋 02-02', dlpEndDate: '2027-03-31' },
+  'owner-empty': { unitName: '碧湖苑 4 栋 04-04', dlpEndDate: '2027-03-31' },
 }
 
 const nowIso = () => new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 19) + '+08:00'
 const dlpExpired = (account) => units[account].dlpEndDate < sgToday()
+
+// REQ-003 状态筛选：IN_PROGRESS = 已派单之后、未单独列出的所有状态
+const LIST_FILTERS = {
+  PENDING_DISPATCH: (s) => s === 'PENDING_DISPATCH',
+  DISPATCHED: (s) => s === 'DISPATCHED',
+  WITHDRAWN: (s) => s === 'WITHDRAWN',
+  IN_PROGRESS: (s) => !['PENDING_DISPATCH', 'DISPATCHED', 'WITHDRAWN'].includes(s),
+}
+
+// 描述摘要（需求第 5 章）：前 50 个码点；截断点落在组合 emoji 中间时整体舍去；换行换成空格；超过 50 个码点加「…」
+function summarize(description) {
+  const total = Array.from(description).length
+  let count = 0
+  let out = ''
+  for (const { segment } of new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(description)) {
+    const n = Array.from(segment).length
+    if (count + n > 50) break
+    count += n
+    out += segment
+  }
+  return out.replace(/\r\n|\r|\n/g, ' ') + (total > 50 ? '…' : '')
+}
 
 let seq = 100
 const defects = new Map() // defectId → { owner, ...详情字段 }
@@ -53,6 +78,49 @@ function seed() {
   mk('seed-expired', 'owner-expired', 'PENDING_DISPATCH', { description: 'DLP 到期屋主预置的待派单缺陷（AC-020）。' })
 }
 seed()
+
+// REQ-003 列表数据。按 QA 约定：owner-list 25 条（各状态、同一提交时间、各类摘要边界），owner-bulk 45 条（待派单 21 条）
+function seedList() {
+  const base = Date.UTC(2026, 9, 1, 1, 30) // 2026-10-01T01:30:00Z = 新加坡 09:30
+  const at = (i) => new Date(base + i * 3600 * 1000 * 5 + 8 * 3600 * 1000).toISOString().slice(0, 19) + '+08:00'
+  const long = '厨房水槽下方水管接口渗水，柜内底板已有水渍并且发霉，请尽快安排人员上门处理，谢谢你们的帮助。'
+  const descs = [
+    long,
+    `第一行描述内容\n第二行描述内容，继续写一些字让它超过五十个字符的长度限制，方便验证摘要截取。`,
+    `Windows 换行第一行\r\n第二行内容，继续写一些字让它超过五十个字符的长度限制，方便验证摘要。`,
+    '连续两个换行\n\n之后继续写一些字，让它超过五十个字符的长度限制，用来验证连续换行不被合并为一个空格。',
+    '一'.repeat(50),
+    '短描述',
+    '1234567890123456789012345678901234567890123456789🔧后面还有内容',
+    '一'.repeat(49) + '👍🏽后面还有内容',
+    '一'.repeat(48) + '👍🏽',
+    '<script>alert(1)</script>这段描述含有脚本标签，应按文字原样显示而不是执行，且描述超过五十个字符。',
+    'A'.repeat(120),
+  ]
+  const statuses = ['PENDING_DISPATCH', 'DISPATCHED', 'WITHDRAWN', 'FUTURE_STATUS']
+  const mk = (owner, i, status, description) => {
+    const id = `list-${owner}-${i}`
+    defects.set(id, {
+      owner,
+      defectId: id,
+      defectNo: `DF-${String(++seq).padStart(6, '0')}`,
+      unitName: units[owner].unitName,
+      location: LOCATIONS[i % LOCATIONS.length],
+      category: CATEGORIES[i % CATEGORIES.length],
+      description,
+      images: [],
+      status,
+      submittedAt: at(i),
+      lastModifiedAt: at(i),
+    })
+  }
+  for (let i = 0; i < 25; i++) mk('owner-list', i, statuses[i % statuses.length], descs[i % descs.length])
+  // 提交时间完全相同的两条（编号大的在前）
+  defects.get('list-owner-list-1').submittedAt = defects.get('list-owner-list-0').submittedAt
+  // 45 条：待派单恰好 21 条
+  for (let i = 0; i < 45; i++) mk('owner-bulk', i, i < 21 ? 'PENDING_DISPATCH' : statuses[1 + (i % 3)], `批量缺陷 ${i + 1}：${long}`)
+}
+seedList()
 
 const json = (body, status = 200) => HttpResponse.json(body, { status })
 const err = (code, message, status, extra = {}) => json({ code, message, ...extra }, status)
@@ -120,6 +188,40 @@ async function toDataUrl(file) {
 }
 
 export const defectHandlers = [
+
+  // REQ-003 列表。校验口径见需求第 7 章；401 → 403 → 400（第 8 章）
+  http.get(`${BASE}/defects`, async ({ request }) => {
+    await delay(LATENCY_MS)
+    const a = authenticate(request)
+    if (a.res) return a.res
+    const q = new URL(request.url).searchParams
+    const statusFilter = q.get('statusFilter') || ''
+    const pageNoRaw = q.get('pageNo')
+    const pageSizeRaw = q.get('pageSize')
+    const fieldErrors = []
+    if (statusFilter && !LIST_FILTERS[statusFilter]) fieldErrors.push({ field: 'statusFilter', message: '状态筛选条件不正确' })
+    const pageNo = pageNoRaw === null ? 1 : /^\d+$/.test(pageNoRaw) ? Number(pageNoRaw) : 0
+    if (pageNo < 1 || pageNo > 2147483647) fieldErrors.push({ field: 'pageNo', message: '页码不正确' })
+    const pageSize = pageSizeRaw === null ? 20 : /^\d+$/.test(pageSizeRaw) ? Number(pageSizeRaw) : 0
+    if (pageSize < 1 || pageSize > 100) fieldErrors.push({ field: 'pageSize', message: '每页条数不正确' })
+    if (fieldErrors.length) return err('DEFECT_VALIDATION_FAILED', '校验不通过', 400, { fieldErrors })
+
+    // 范围只由登录身份决定；排序：提交时间倒序，相同时编号大的在前
+    const match = statusFilter ? LIST_FILTERS[statusFilter] : () => true
+    const all = [...defects.values()]
+      .filter((d) => d.owner === a.account && match(d.status))
+      .sort((x, y) => Date.parse(y.submittedAt) - Date.parse(x.submittedAt) || y.defectNo.localeCompare(x.defectNo))
+    const items = all.slice((pageNo - 1) * pageSize, pageNo * pageSize).map((d) => ({
+      defectId: d.defectId,
+      defectNo: d.defectNo,
+      location: d.location,
+      category: d.category,
+      descriptionSummary: summarize(d.description),
+      status: d.status,
+      submittedAt: d.submittedAt,
+    }))
+    return json({ items, pageNo, pageSize, total: all.length })
+  }),
   http.get(`${BASE}/owner/submit-context`, async ({ request }) => {
     await delay(LATENCY_MS)
     const a = authenticate(request)

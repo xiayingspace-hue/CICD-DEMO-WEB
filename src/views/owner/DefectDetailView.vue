@@ -21,6 +21,13 @@ import UiButton from '@/components/UiButton.vue'
 const props = defineProps({ defectId: { type: String, required: true } })
 const router = useRouter()
 
+// 从列表进入时，返回要回到原筛选与页码（REQ-003 AC-008）；其他来源回首页
+function backToList() {
+  const from = history.state?.back
+  if (typeof from === 'string' && from.startsWith('/owner/home')) router.back()
+  else router.push({ name: 'home-owner' })
+}
+
 // loading | error | notFound | ready
 const phase = ref('loading')
 const defect = ref(null)
@@ -103,7 +110,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
 
 <template>
   <section class="page" data-testid="defect-detail-page">
-    <button type="button" class="link" data-testid="btn-back-home" @click="router.push({ name: 'home-owner' })">← 返回首页</button>
+    <button type="button" class="link" data-testid="btn-back-home" @click="backToList">← 返回首页</button>
 
     <div v-if="phase === 'loading'" class="card state" aria-busy="true" data-testid="defect-loading">加载中…</div>
 
