@@ -1,24 +1,12 @@
 // 登录接口 mock。路径、字段、code、HTTP 状态取自 CONTEXT outputs/api/API-auth-001-admin.md
 import { http, HttpResponse, delay } from 'msw'
 import { ACCOUNTS, PASSWORD, SCENARIO_ACCOUNTS, isEnabled } from './accounts'
+import { issueToken, parseToken } from './token'
+import { defectHandlers } from './defects'
 
 const BASE = import.meta.env.VITE_API_BASE
 const EXPIRES_IN = 28800
 const LATENCY_MS = 600
-const TOKEN_PREFIX = 'mock-token.'
-
-// 令牌里带账号与签发时间，便于刷新后 /auth/me 仍能识别
-function issueToken(account) {
-  return `${TOKEN_PREFIX}${encodeURIComponent(account)}.${Date.now()}`
-}
-
-function parseToken(token) {
-  if (!token || !token.startsWith(TOKEN_PREFIX)) return null
-  const rest = token.slice(TOKEN_PREFIX.length)
-  const dot = rest.lastIndexOf('.')
-  if (dot < 0) return null
-  return { account: decodeURIComponent(rest.slice(0, dot)), issuedAt: Number(rest.slice(dot + 1)) }
-}
 
 const invalidCredentials = () =>
   HttpResponse.json({ code: 'AUTH_INVALID_CREDENTIALS', message: '账号或密码错误' }, { status: 401 })
@@ -95,4 +83,6 @@ export const handlers = [
     const { role, displayName } = ACCOUNTS[parsed.account]
     return HttpResponse.json({ role, displayName })
   }),
+
+  ...defectHandlers,
 ]

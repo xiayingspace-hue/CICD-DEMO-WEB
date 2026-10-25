@@ -1,6 +1,7 @@
 import { setupWorker } from 'msw/browser'
 import { handlers } from './handlers'
 import { setDisabled, resetOverrides } from './accounts'
+import { defectMockControls } from './defects'
 
 export const worker = setupWorker(...handlers)
 
@@ -10,6 +11,9 @@ window.__mockAuth = {
   enable: (account) => setDisabled(account, false),
   reset: resetOverrides,
 }
+
+// 控制台 / E2E 用：模拟派单、改 DLP 截止日，例如 __mockDefect.setStatus('seed-pending', 'DISPATCHED')
+window.__mockDefect = defectMockControls
 
 export function startMock() {
   return worker.start({
