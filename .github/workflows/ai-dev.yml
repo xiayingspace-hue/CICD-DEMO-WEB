@@ -58,12 +58,12 @@ jobs:
             echo "branch=feat/$(echo "$reqs" | tr 'A-Z,' 'a-z-')-auto-${sha:0:7}"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: 检出产品文档（固定到合并提交，只读）
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.CONTEXT_REPO }}
           ref: ${{ steps.ev.outputs.sha }}
